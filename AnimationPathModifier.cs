@@ -28,7 +28,7 @@ public class AnimationPathModifier : EditorWindow
             ModifyPaths();
         }
 
-        GUILayout.Label("패스 수정을 하기 전에 백업을 해주세요. \n By YuSa64", EditorStyles.helpBox);
+        GUILayout.Label("패스 수정이 완료되고 나면,\n대상 폴더 내의 converted 폴더에 변환된 애니메이션들이 있습니다. \nBy YuSa64", EditorStyles.helpBox);
     }
 
     private void ModifyPaths()
@@ -38,42 +38,53 @@ public class AnimationPathModifier : EditorWindow
             EditorUtility.DisplayDialog("Error", "이니셜을 입력해주세요.", "OK");
             return;
         }
-        if(string.IsNullOrEmpty(rootbone))
+        if (string.IsNullOrEmpty(rootbone))
         {
             EditorUtility.DisplayDialog("Error", "루트 본을 입력해주세요.", "OK");
             return;
         }
-    if (folderPath != null)
-    {
-        // Get the asset path of the folder
-        string assetFolderPath = AssetDatabase.GetAssetPath(folderPath);
-
-        // Get all .anim files in the folder
-        string[] animFiles = Directory.GetFiles(assetFolderPath, "*.anim", SearchOption.AllDirectories);
-
-        foreach (string filePath in animFiles)
+        if (folderPath != null)
         {
-            // Convert the file path to an asset path
-            string assetPath = filePath.Replace(UnityEngine.Application.dataPath, "Assets");
+            string assetFolderPath = AssetDatabase.GetAssetPath(folderPath);
+            string convertedFolderPath = Path.Combine(assetFolderPath, "converted");
 
-            // Read the file line by line
-            string[] lines = File.ReadAllLines(assetPath);
-
-            for (int i = 0; i < lines.Length; i++)
+            // Create the 'converted' folder if it doesn't exist
+            if (!Directory.Exists(convertedFolderPath))
             {
-                // Replace 'name+":"' in every path
-                lines[i] = lines[i].Replace(name + ":", "");
-
-                // Change every "Hips" in path to "rootbone/Hips"
-                lines[i] = lines[i].Replace("Hips", rootbone + "/Hips");
+                Directory.CreateDirectory(convertedFolderPath);
             }
 
-            // Write the modified content back to the file
-            File.WriteAllLines(assetPath, lines);
-        }
+            // Get all .anim files in the folder
+            string[] animFiles = Directory.GetFiles(assetFolderPath, "*.anim", SearchOption.AllDirectories);
 
-        // Refresh the AssetDatabase after modifying the files
-        AssetDatabase.Refresh();
+            foreach (string filePath in animFiles)
+            {
+                // Ignore files already in the 'converted' folder
+                if (filePath.StartsWith(convertedFolderPath))
+                {
+                    continue;
+                }
+
+                string fileName = Path.GetFileName(filePath);
+                string destFilePath = Path.Combine(convertedFolderPath, fileName);
+
+                // Duplicate the .anim file to the 'converted' folder using AssetDatabase.CopyAsset
+                string sourcePath = filePath.Replace(Application.dataPath, "Assets");
+                string destinationPath = destFilePath.Replace(Application.dataPath, "Assets");
+
+                if (AssetDatabase.CopyAsset(sourcePath, destinationPath))
+                {
+                    // Modify the paths in the duplicated file
+                    ModifyFile(destinationPath);
+                }
+                else
+                {
+                    Debug.LogError("Failed to copy asset: " + sourcePath);
+                }
+            }
+
+            // Refresh the AssetDatabase after modifying the files
+            AssetDatabase.Refresh();
 
             EditorUtility.DisplayDialog("Success", "패스 수정이 완료되었습니다.", "OK");
         }
@@ -81,5 +92,22 @@ public class AnimationPathModifier : EditorWindow
         {
             EditorUtility.DisplayDialog("Error", "애님 파일이 들어있는 폴더를 선택해주세요.", "OK");
         }
+    }
+
+    private void ModifyFile(string assetPath)
+    {
+        string[] lines = File.ReadAllLines(assetPath);
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            // Replace 'name+":"' in every path
+            lines[i] = lines[i].Replace(name + ":", "");
+
+            // Change every "Hips" in path to "rootbone/Hips"
+            lines[i] = lines[i].Replace("Hips", rootbone + "/Hips");
+        }
+
+        // Write the modified content back to the file
+        File.WriteAllLines(assetPath, lines);
     }
 }
