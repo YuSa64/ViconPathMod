@@ -4,11 +4,15 @@ using UnityEditor;
 using UnityEngine;
 using System.IO;
 using Object = UnityEngine.Object;
+using System;
+using System.Linq;
 
 public class AnimationPathModifier : EditorWindow
 {
     private string name;
-    private string rootbone = "Armature";
+    private bool inputRootBone = true;
+    private GameObject rootBone;
+    private string rootBoneName = "Armature";
     private DefaultAsset folderPath;
 
     [UnityEditor.MenuItem("YuSa64/Vicon Path Modifier")]
@@ -19,8 +23,17 @@ public class AnimationPathModifier : EditorWindow
 
     private void OnGUI()
     {
-        name = EditorGUILayout.TextField("이니셜", name);
-        rootbone = EditorGUILayout.TextField("루트 본", rootbone);
+        name = EditorGUILayout.TextField("액터 이니셜", name);
+        inputRootBone = EditorGUILayout.Toggle("루트 본 직접 입력", inputRootBone);
+        if (inputRootBone)
+        {
+            rootBoneName = EditorGUILayout.TextField("루트 본", rootBoneName);
+        }
+        else
+        {
+            rootBone = EditorGUILayout.ObjectField("루트 본", rootBone, typeof(GameObject), true) as GameObject;
+            rootBoneName = rootBone != null ? rootBone.name : "Armature";
+        }
         folderPath = (DefaultAsset)EditorGUILayout.ObjectField("폴더", folderPath, typeof(DefaultAsset), false);
 
         if (GUILayout.Button("패스 수정"))
@@ -38,7 +51,7 @@ public class AnimationPathModifier : EditorWindow
             EditorUtility.DisplayDialog("Error", "이니셜을 입력해주세요.", "OK");
             return;
         }
-        if (string.IsNullOrEmpty(rootbone))
+        if (string.IsNullOrEmpty(rootBoneName))
         {
             EditorUtility.DisplayDialog("Error", "루트 본을 입력해주세요.", "OK");
             return;
@@ -52,6 +65,13 @@ public class AnimationPathModifier : EditorWindow
             if (!Directory.Exists(convertedFolderPath))
             {
                 Directory.CreateDirectory(convertedFolderPath);
+            }
+
+            string[] fbxFiles = Directory.GetFiles(assetFolderPath, "*.fbx", SearchOption.AllDirectories);
+
+            foreach (string filePath in fbxFiles)
+            {
+                ExtractAnim(assetFolderPath, filePath);
             }
 
             // Get all .anim files in the folder
@@ -103,11 +123,27 @@ public class AnimationPathModifier : EditorWindow
             // Replace 'name+":"' in every path
             lines[i] = lines[i].Replace(name + ":", "");
 
-            // Change every "Hips" in path to "rootbone/Hips"
-            lines[i] = lines[i].Replace("Hips", rootbone + "/Hips");
+            // Change every "Hips" in path to "rootBoneName/Hips"
+            lines[i] = lines[i].Replace("Hips", rootBoneName + "/Hips");
         }
 
         // Write the modified content back to the file
         File.WriteAllLines(assetPath, lines);
+    }
+    private void ExtractAnim(string assetFolderPath, string assetPath)
+    {
+        // Load all assets at the path
+        Object[] allAssets = AssetDatabase.LoadAllAssetsAtPath(assetPath);
+        // Filter the assets by type
+        AnimationClip[] clips = Array.FindAll(allAssets, asset => asset is AnimationClip).Cast<AnimationClip>().ToArray();
+        
+        foreach (AnimationClip clip in clips)
+        {
+            AnimationClip newClip = Object.Instantiate(clip);
+            if(newClip == null || newClip.name == "" || newClip.name.Contains("__preview__")) continue;
+            string fbxName = Path.GetFileNameWithoutExtension(assetPath);
+            string clipPath = Path.Combine(assetFolderPath, fbxName + "_" + newClip.name + ".anim");
+            AssetDatabase.CreateAsset(newClip, clipPath);
+        }
     }
 }
